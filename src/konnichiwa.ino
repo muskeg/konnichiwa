@@ -84,26 +84,66 @@ void setup() {
     // Show connecting message on display
     sprintf(textBuf, "Connecting to %s...", ssid);
     textWidth = u8g2.getUTF8Width(textBuf);
-    xPos = displayWidth;
-    u8g2.clearBuffer();
-    u8g2.drawUTF8(0, yPos, textBuf);
-    u8g2.sendBuffer();
+    int connectingXPos = displayWidth; // Start off-screen
     
-    // Wait up to 20 seconds for WiFi connection
+    // Wait up to 20 seconds for WiFi connection while scrolling message
     unsigned long startAttemptTime = millis();
+    unsigned long lastScrollTime = 0;
+    
     while (WiFi.status() != WL_CONNECTED && 
            millis() - startAttemptTime < 20000) {
-      delay(500);
-      Serial.print(".");
+      
+      // Handle scrolling animation
+      unsigned long currentTime = millis();
+      if (currentTime - lastScrollTime > scrollInterval) {
+        lastScrollTime = currentTime;
+        
+        // Scroll logic
+        connectingXPos--;
+        if (connectingXPos < -textWidth) {
+          connectingXPos = displayWidth;
+        }
+        
+        // Draw scrolling text
+        u8g2.clearBuffer();
+        u8g2.drawUTF8(connectingXPos, yPos, textBuf);
+        u8g2.sendBuffer();
+      }
+      
+      delay(10); // Small delay to prevent watchdog trigger
     }
     
     if (WiFi.status() == WL_CONNECTED) {
       Serial.println("Connected to WiFi");
+      
+      // Show "Connected" message with scrolling animation
       sprintf(textBuf, "Connected to %s", ssid);
-      u8g2.clearBuffer();
-      u8g2.drawUTF8(0, yPos, textBuf);
-      u8g2.sendBuffer();
-      delay(2000); // Show the connected message briefly
+      textWidth = u8g2.getUTF8Width(textBuf);
+      connectingXPos = displayWidth;
+      
+      // Scroll "Connected" message for 2 seconds
+      unsigned long connectedStartTime = millis();
+      lastScrollTime = 0;
+      
+      while (millis() - connectedStartTime < 2000) {
+        unsigned long currentTime = millis();
+        if (currentTime - lastScrollTime > scrollInterval) {
+          lastScrollTime = currentTime;
+          
+          // Scroll logic
+          connectingXPos--;
+          if (connectingXPos < -textWidth) {
+            connectingXPos = displayWidth;
+          }
+          
+          // Draw scrolling text
+          u8g2.clearBuffer();
+          u8g2.drawUTF8(connectingXPos, yPos, textBuf);
+          u8g2.sendBuffer();
+        }
+        
+        delay(10); // Small delay to prevent watchdog trigger
+      }
     } else {
       Serial.println("Failed to connect to WiFi");
       setupAPMode();
