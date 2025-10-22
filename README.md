@@ -55,7 +55,6 @@ Quotes are fetched from a backend service compatible with [muskeg/quote-api](htt
 ## Libraries Used
 - [U8g2](https://github.com/olikraus/u8g2) for LED matrix graphics
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson) for JSON parsing
-- [WiFiManager](https://github.com/tzapu/WiFiManager) (listed, but not used in current code)
 
 ## Custom Font
 - `src/misakimincho.h` contains a Japanese font for rendering on the matrix
