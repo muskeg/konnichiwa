@@ -19,6 +19,7 @@ This project runs on an ESP32 and displays scrolling Japanese text (UTF-8) on a 
 - WiFi credentials and API server settings are stored in flash (Preferences)
 - If configuration is missing or WiFi fails, device enters AP mode with a captive portal for setup
 - Web-based configuration page for WiFi and API settings
+- Automatic cookie handling for API authentication and session management
 
 ## Backend API
 Quotes are fetched from a backend service compatible with [muskeg/quote-api](https://github.com/muskeg/quote-api). The device expects a JSON response like:
