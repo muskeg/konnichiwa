@@ -54,6 +54,9 @@ unsigned long lastScrollMs = 0;
 static SemaphoreHandle_t textMutex = NULL;
 TaskHandle_t apiTaskHandle = NULL;
 
+// Cookie storage
+String storedCookies = "";
+
 // Function declarations
 bool loadConfiguration();
 void saveConfiguration();
@@ -61,6 +64,47 @@ void setupAPMode();
 void handleRoot();
 void handleSave();
 void handleNotFound();
+
+// Function to extract and store cookies from response
+void handleCookies(HTTPClient& http) {
+  // Check if Set-Cookie header exists
+  if (http.hasHeader("Set-Cookie")) {
+    String cookieHeader = http.header("Set-Cookie");
+    Serial.print("Received cookie: ");
+    Serial.println(cookieHeader);
+    
+    // Parse the cookie (basic parsing - you might need more sophisticated parsing for multiple cookies)
+    // Format: name=value; attributes...
+    int semicolonPos = cookieHeader.indexOf(';');
+    String cookieValue = (semicolonPos > 0) ? cookieHeader.substring(0, semicolonPos) : cookieHeader;
+    
+    // Store the cookie (append if multiple, or replace existing)
+    if (storedCookies.length() > 0) {
+      storedCookies += "; ";
+    }
+    storedCookies += cookieValue;
+    
+    // Optionally save to preferences for persistence across reboots
+    preferences.begin("konnichiwa", false);
+    preferences.putString("cookies", storedCookies);
+    preferences.end();
+    
+    Serial.print("Stored cookies: ");
+    Serial.println(storedCookies);
+  }
+}
+
+// Function to load cookies from preferences
+void loadCookies() {
+  preferences.begin("konnichiwa", false);
+  storedCookies = preferences.getString("cookies", "");
+  preferences.end();
+  
+  if (storedCookies.length() > 0) {
+    Serial.print("Loaded cookies: ");
+    Serial.println(storedCookies);
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -174,11 +218,26 @@ void setup() {
 
             if (http.begin(client, url)) {
               http.setTimeout(10000);
+              
+              // Add cookies to the request if we have any
+              if (storedCookies.length() > 0) {
+                http.addHeader("Cookie", storedCookies);
+                Serial.print("Sending cookies: ");
+                Serial.println(storedCookies);
+              }
+              
+              // Tell HTTPClient to collect Set-Cookie headers
+              const char* headers[] = {"Set-Cookie"};
+              http.collectHeaders(headers, 1);
+              
               int httpResponseCode = http.GET();
               Serial.print("API task HTTP code: ");
               Serial.println(httpResponseCode);
 
               if (httpResponseCode > 0) {
+                // Handle cookies from the response
+                handleCookies(http);
+                
                 String payload = http.getString();
                 Serial.println("API payload:");
                 Serial.println(payload);
@@ -400,6 +459,8 @@ void saveConfiguration() {
   preferences.putUShort("serverPort", serverPort);
   preferences.putString("serverPath", serverPath);
   preferences.putBool("configured", true);
+  // Optionally clear cookies when configuration changes
+  // preferences.remove("cookies");
   preferences.end();
 }
 
