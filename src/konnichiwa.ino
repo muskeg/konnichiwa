@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <WiFi.h> 
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "freertos/FreeRTOS.h"
@@ -17,9 +18,7 @@
 // Config default values - will be overwritten if stored in preferences
 char ssid[32] = "";
 char password[64] = "";
-char serverHost[64] = "youki.home.muskegg.com";
-uint16_t serverPort = 8080;
-char serverPath[32] = "/quote";
+char serverUrl[128] = "http://youki.home.muskegg.com:8080/quote"; // Full URL with protocol
 
 // AP mode settings
 const char* AP_SSID = "KonnichiwaSetup";
@@ -42,7 +41,7 @@ U8G2_MAX7219_32X8_F_4W_SW_SPI u8g2(U8G2_R0, CLK_PIN, DATA_PIN, CS_PIN, U8X8_PIN_
 char textBuf[128] = "これを読めるのはちょっとムズ";
 char nextBuf[128] = {0};
 bool hasNextQuote = false;
-bool invertDisplay = false; // when true: black text on color background
+bool invertDisplay = false; // when true: black text on light background
 int textWidth = 0;
 int xPos = 0;
 int yPos = 7;
@@ -209,63 +208,129 @@ void setup() {
         // API task body
         for (;;) {
           if (WiFi.isConnected()) {
+            // Parse the URL to detect protocol
+            String url = String(serverUrl);
+            bool isHttps = url.startsWith("https://");
+            
             HTTPClient http;
-            WiFiClient client;
-            client.setTimeout(10000);
-            String url = "http://" + String(serverHost) + ":" + String(serverPort) + serverPath;
-            Serial.print("API task connecting to: ");
-            Serial.println(url);
+            
+            if (isHttps) {
+              WiFiClientSecure secureClient;
+              secureClient.setInsecure(); // Skip certificate validation (use for self-signed certs)
+              secureClient.setTimeout(10000);
+              
+              Serial.print("API task connecting to: ");
+              Serial.println(url);
 
-            if (http.begin(client, url)) {
-              http.setTimeout(10000);
-              
-              // Add cookies to the request if we have any
-              if (storedCookies.length() > 0) {
-                http.addHeader("Cookie", storedCookies);
-                Serial.print("Sending cookies: ");
-                Serial.println(storedCookies);
-              }
-              
-              // Tell HTTPClient to collect Set-Cookie headers
-              const char* headers[] = {"Set-Cookie"};
-              http.collectHeaders(headers, 1);
-              
-              int httpResponseCode = http.GET();
-              Serial.print("API task HTTP code: ");
-              Serial.println(httpResponseCode);
-
-              if (httpResponseCode > 0) {
-                // Handle cookies from the response
-                handleCookies(http);
+              if (http.begin(secureClient, url)) {
+                http.setTimeout(10000);
                 
-                String payload = http.getString();
-                Serial.println("API payload:");
-                Serial.println(payload);
+                // Add cookies to the request if we have any
+                if (storedCookies.length() > 0) {
+                  http.addHeader("Cookie", storedCookies);
+                  Serial.print("Sending cookies: ");
+                  Serial.println(storedCookies);
+                }
+                
+                // Tell HTTPClient to collect Set-Cookie headers
+                const char* headers[] = {"Set-Cookie"};
+                http.collectHeaders(headers, 1);
+                
+                int httpResponseCode = http.GET();
+                Serial.print("API task HTTP code: ");
+                Serial.println(httpResponseCode);
 
-                JsonDocument doc;
-                DeserializationError err = deserializeJson(doc, payload);
-                if (!err) {
-                  String quote = doc["quote"].as<String>();
-                  quote.trim();
-                  if (quote.length() > 0) {
-                    // queue the next quote under mutex; loop() will run a transition and swap it in
-                    if (textMutex && xSemaphoreTake(textMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                      quote.toCharArray(nextBuf, sizeof(nextBuf));
-                      hasNextQuote = true;
-                      xSemaphoreGive(textMutex);
+                if (httpResponseCode > 0) {
+                  // Handle cookies from the response
+                  handleCookies(http);
+                  
+                  String payload = http.getString();
+                  Serial.println("API payload:");
+                  Serial.println(payload);
+
+                  JsonDocument doc;
+                  DeserializationError err = deserializeJson(doc, payload);
+                  if (!err) {
+                    String quote = doc["quote"].as<String>();
+                    quote.trim();
+                    if (quote.length() > 0) {
+                      // queue the next quote under mutex; loop() will run a transition and swap it in
+                      if (textMutex && xSemaphoreTake(textMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        quote.toCharArray(nextBuf, sizeof(nextBuf));
+                        hasNextQuote = true;
+                        xSemaphoreGive(textMutex);
+                      }
                     }
+                  } else {
+                    Serial.print("JSON parse error: ");
+                    Serial.println(err.c_str());
                   }
                 } else {
-                  Serial.print("JSON parse error: ");
-                  Serial.println(err.c_str());
+                  Serial.print("API task HTTP Error code: ");
+                  Serial.println(httpResponseCode);
                 }
+                http.end();
               } else {
-                Serial.print("API task HTTP Error code: ");
-                Serial.println(httpResponseCode);
+                Serial.println("API task: HTTP begin failed");
               }
-              http.end();
             } else {
-              Serial.println("API task: HTTP begin failed");
+              WiFiClient insecureClient;
+              insecureClient.setTimeout(10000);
+              
+              Serial.print("API task connecting to: ");
+              Serial.println(url);
+
+              if (http.begin(insecureClient, url)) {
+                http.setTimeout(10000);
+                
+                // Add cookies to the request if we have any
+                if (storedCookies.length() > 0) {
+                  http.addHeader("Cookie", storedCookies);
+                  Serial.print("Sending cookies: ");
+                  Serial.println(storedCookies);
+                }
+                
+                // Tell HTTPClient to collect Set-Cookie headers
+                const char* headers[] = {"Set-Cookie"};
+                http.collectHeaders(headers, 1);
+                
+                int httpResponseCode = http.GET();
+                Serial.print("API task HTTP code: ");
+                Serial.println(httpResponseCode);
+
+                if (httpResponseCode > 0) {
+                  // Handle cookies from the response
+                  handleCookies(http);
+                  
+                  String payload = http.getString();
+                  Serial.println("API payload:");
+                  Serial.println(payload);
+
+                  JsonDocument doc;
+                  DeserializationError err = deserializeJson(doc, payload);
+                  if (!err) {
+                    String quote = doc["quote"].as<String>();
+                    quote.trim();
+                    if (quote.length() > 0) {
+                      // queue the next quote under mutex; loop() will run a transition and swap it in
+                      if (textMutex && xSemaphoreTake(textMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        quote.toCharArray(nextBuf, sizeof(nextBuf));
+                        hasNextQuote = true;
+                        xSemaphoreGive(textMutex);
+                      }
+                    }
+                  } else {
+                    Serial.print("JSON parse error: ");
+                    Serial.println(err.c_str());
+                  }
+                } else {
+                  Serial.print("API task HTTP Error code: ");
+                  Serial.println(httpResponseCode);
+                }
+                http.end();
+              } else {
+                Serial.println("API task: HTTP begin failed");
+              }
             }
           } else {
             Serial.println("API task: WiFi not connected");
@@ -277,7 +342,7 @@ void setup() {
         vTaskDelete(NULL);
       },
       "apiTask",
-      4096,
+      8192, // Increased stack size for HTTPS/SSL operations
       NULL,
       1,
       &apiTaskHandle,
@@ -431,16 +496,13 @@ bool loadConfiguration() {
   if (preferences.isKey("configured")) {
     String storedSsid = preferences.getString("ssid", "");
     String storedPassword = preferences.getString("password", "");
-    String storedHost = preferences.getString("serverHost", "youki.home.muskegg.com");
-    uint16_t storedPort = preferences.getUShort("serverPort", 8080);
-    String storedPath = preferences.getString("serverPath", "/quote");
+    String storedUrl = preferences.getString("serverUrl", "http://youki.home.muskegg.com:8080/quote");
+    invertDisplay = preferences.getBool("invertDisplay", false);
     
     // Copy values to our variables
     storedSsid.toCharArray(ssid, sizeof(ssid));
     storedPassword.toCharArray(password, sizeof(password));
-    storedHost.toCharArray(serverHost, sizeof(serverHost));
-    serverPort = storedPort;
-    storedPath.toCharArray(serverPath, sizeof(serverPath));
+    storedUrl.toCharArray(serverUrl, sizeof(serverUrl));
     
     preferences.end();
     return storedSsid.length() > 0; // Consider configuration valid if SSID is set
@@ -455,9 +517,8 @@ void saveConfiguration() {
   preferences.begin("konnichiwa", false);
   preferences.putString("ssid", ssid);
   preferences.putString("password", password);
-  preferences.putString("serverHost", serverHost);
-  preferences.putUShort("serverPort", serverPort);
-  preferences.putString("serverPath", serverPath);
+  preferences.putString("serverUrl", serverUrl);
+  preferences.putBool("invertDisplay", invertDisplay);
   preferences.putBool("configured", true);
   // Optionally clear cookies when configuration changes
   // preferences.remove("cookies");
@@ -497,34 +558,38 @@ void setupAPMode() {
 
 // Web server handler for root page
 void handleRoot() {
+  String invertChecked = invertDisplay ? "checked" : "";
   String html = "<!DOCTYPE html><html><head><title>Konnichiwa Setup</title>"
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                "<style>body{font-family:Arial;margin:20px;} input,label{display:block;margin-bottom:10px;} "
-                "input[type=text],input[type=password],input[type=number]{width:100%;padding:8px;box-sizing:border-box;}"
-                "button{background:#4CAF50;color:white;padding:10px;border:none;cursor:pointer;}</style></head>"
-                "<body><h1>Konnichiwa Setup</h1>"
+                "<style>body{font-family:Arial;margin:20px;background-color:#331111;color:#f3f3f3;} "
+                "#config{max-width:600px;margin:auto;margin-top:5%;} "
+                "input,label{display:block;margin-bottom:20px;} "
+                "input[type=text],input[type=password],input[type=url]{width:100%;padding:8px;box-sizing:border-box;} "
+                "input[type=checkbox]{display:inline;width:auto;margin-right:5px;} "
+                "button{background:#841d00;color:white;font-size:16px;padding:20px;border:none;cursor:pointer;border-radius:25px;} "
+                ".hint{font-size:0.9em;color:#dbdbdb;margin-top:-15px;}</style></head>"
+                "<body><div id='config'><h1>Konnichiwa Setup</h1>"
                 "<form action='/save' method='POST'>"
                 "<label>WiFi SSID:</label><input type='text' name='ssid' value='" + String(ssid) + "' required>"
                 "<label>WiFi Password:</label><input type='password' name='password' value='" + String(password) + "' required>"
-                "<label>Server Host:</label><input type='text' name='host' value='" + String(serverHost) + "' required>"
-                "<label>Server Port:</label><input type='number' name='port' value='" + String(serverPort) + "' required>"
-                "<label>Server Path:</label><input type='text' name='path' value='" + String(serverPath) + "' required>"
+                "<label>Server URL:</label><input type='url' name='url' value='" + String(serverUrl) + "' required placeholder='http://example.com:8080/quote'>"
+                "<div class='hint'>Include protocol (http:// or https://), host, port, and path</div>"
+                "<label><input type='checkbox' name='invert' " + invertChecked + "> Invert Display (black text on light background)</label>"
                 "<button type='submit'>Save Configuration</button>"
-                "</form></body></html>";
+                "</form></div></body></html>";
   webServer.send(200, "text/html", html);
 }
 
 // Web server handler for saving configuration
 void handleSave() {
   if (webServer.hasArg("ssid") && webServer.hasArg("password") && 
-      webServer.hasArg("host") && webServer.hasArg("port") && webServer.hasArg("path")) {
+      webServer.hasArg("url")) {
     
     // Get form data
     webServer.arg("ssid").toCharArray(ssid, sizeof(ssid));
     webServer.arg("password").toCharArray(password, sizeof(password));
-    webServer.arg("host").toCharArray(serverHost, sizeof(serverHost));
-    serverPort = webServer.arg("port").toInt();
-    webServer.arg("path").toCharArray(serverPath, sizeof(serverPath));
+    webServer.arg("url").toCharArray(serverUrl, sizeof(serverUrl));
+    invertDisplay = webServer.hasArg("invert"); // Checkbox is present only if checked
     
     // Save to preferences
     saveConfiguration();
@@ -532,11 +597,12 @@ void handleSave() {
     // Show success and restart message
     String html = "<!DOCTYPE html><html><head><title>Configuration Saved</title>"
                   "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                  "<style>body{font-family:Arial;margin:20px;text-align:center;} "
-                  ".success{color:green;}</style></head>"
-                  "<body><h1 class='success'>Configuration Saved!</h1>"
+                  "<style>body{font-family:Arial;margin:20px;background-color:#331111;color:#f3f3f3;text-align:center;} "
+                  "#config{max-width:600px;margin:auto;margin-top:5%;} "
+                  ".success{color:#4CAF50;font-size:24px;}</style></head>"
+                  "<body><div id='config'><h1 class='success'>Configuration Saved!</h1>"
                   "<p>The device will restart and attempt to connect to the configured WiFi network.</p>"
-                  "</body></html>";
+                  "</div></body></html>";
     webServer.send(200, "text/html", html);
     
     // Short delay then restart
