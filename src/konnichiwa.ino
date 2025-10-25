@@ -30,7 +30,7 @@ const byte DNS_PORT = 53;
 
 unsigned long scrollMillis = 0;
 unsigned long scrollInterval = 75; // smaller = faster
-unsigned long apiCallInterval = 120000;  
+unsigned long apiCallInterval = 120000;  // Default: 2 minutes (in milliseconds)
 
 // Preferences for storing configuration
 Preferences preferences;
@@ -369,8 +369,25 @@ void loop() {
       String s = Serial.readStringUntil('\n');
       s.trim();
       if (s.length() > 0) {
+        // check for config command: "/config" to enter AP mode for reconfiguration
+        if (s.startsWith("/config")) {
+          Serial.println("Entering configuration mode...");
+          Serial.println("Stopping API task and restarting in AP mode");
+          
+          // Delete the API task if it exists
+          if (apiTaskHandle != NULL) {
+            vTaskDelete(apiTaskHandle);
+            apiTaskHandle = NULL;
+          }
+          
+          // Disconnect from WiFi
+          WiFi.disconnect();
+          
+          // Enter AP mode
+          setupAPMode();
+        }
         // check for invert command: "/invert on", "/invert off", "/invert toggle"
-        if (s.startsWith("/invert")) {
+        else if (s.startsWith("/invert")) {
           if (s.indexOf("on") >= 0) invertDisplay = true;
           else if (s.indexOf("off") >= 0) invertDisplay = false;
           else invertDisplay = !invertDisplay;
@@ -499,6 +516,7 @@ bool loadConfiguration() {
     String storedPassword = preferences.getString("password", "");
     String storedUrl = preferences.getString("serverUrl", "https://quotes.muskeg.dev/quote");
     invertDisplay = preferences.getBool("invertDisplay", false);
+    apiCallInterval = preferences.getULong("apiInterval", 120000); // Default: 2 minutes
     
     // Copy values to our variables
     storedSsid.toCharArray(ssid, sizeof(ssid));
@@ -520,6 +538,7 @@ void saveConfiguration() {
   preferences.putString("password", password);
   preferences.putString("serverUrl", serverUrl);
   preferences.putBool("invertDisplay", invertDisplay);
+  preferences.putULong("apiInterval", apiCallInterval);
   preferences.putBool("configured", true);
   // Optionally clear cookies when configuration changes
   // preferences.remove("cookies");
@@ -560,21 +579,33 @@ void setupAPMode() {
 // Web server handler for root page
 void handleRoot() {
   String invertChecked = invertDisplay ? "checked" : "";
+  // Convert milliseconds to seconds for display
+  unsigned long apiIntervalSeconds = apiCallInterval / 1000;
+
   String html = "<!DOCTYPE html><html><head><title>Konnichiwa Setup</title>"
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                "<style>body{font-family:Arial;margin:20px;background-color:#331111;color:#f3f3f3;} "
+                "<style>"
+                "body{font-family:Arial;margin:20px;background-color:#331111;color:#f3f3f3;} "
                 "#config{max-width:600px;margin:auto;margin-top:5%;} "
-                "input,label{display:block;margin-bottom:20px;} "
-                "input[type=text],input[type=password],input[type=url]{width:100%;padding:8px;box-sizing:border-box;} "
-                "input[type=checkbox]{display:inline;width:auto;margin-right:5px;} "
-                "button{background:#841d00;color:white;font-size:16px;padding:20px;border:none;cursor:pointer;border-radius:25px;} "
-                ".hint{font-size:0.9em;color:#dbdbdb;margin-top:-15px;}</style></head>"
+                "label{display:block;margin:0 0 6px 0;font-weight:600;} "
+                "input,label,button{box-sizing:border-box;} "
+                "input[type=text],input[type=password],input[type=url],input[type=number]{width:100%;padding:8px;margin:0 0 12px 0;border-radius:6px;border:1px solid #4a2a2a;background:#2a1b1b;color:#f3f3f3;} "
+                "input[type=checkbox]{display:inline-block;margin-right:8px;transform:translateY(2px);} "
+                ".hint{font-size:0.9em;color:#dbdbdb;margin:6px 0 16px 0;line-height:1.2;} "
+                "button{background:#841d00;color:white;font-size:16px;padding:12px 20px;border:none;cursor:pointer;border-radius:25px;display:block;width:100%;} "
+                "@media (max-width:420px){#config{margin-top:8%;padding:0 10px;} button{padding:14px 10px;}}"
+                "</style></head>"
                 "<body><div id='config'><h1>Konnichiwa Setup</h1>"
                 "<form action='/save' method='POST'>"
                 "<label>WiFi SSID:</label><input type='text' name='ssid' value='" + String(ssid) + "' required>"
                 "<label>WiFi Password:</label><input type='password' name='password' value='" + String(password) + "' required>"
                 "<label>Server URL:</label><input type='url' name='url' value='" + String(serverUrl) + "' required placeholder='https://quotes.muskeg.dev/quote'>"
-                "<div class='hint'>Include protocol (http:// or https://), host, port, and path</div>"
+                "<div class='hint'>Include protocol (http:// or https://), host, port, and path<br>"
+                "<img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAHdSURBVHgBvVeLbYNADDVdoHSDG4ENwgjpBMkG6QbtBkknIBtEnaDdADoBbEA6gWuXQ3GR7wOc8qSnSPhvkzuTQSQQMaefLXFDLIiGmFvxldgRG+IX8SPLsiukAAU2xDOxx3mo2BaWgismHnE9jrZ7s6tuMR1ajO0GKRaYNrhMorh35VoSBjwzbxWDCy5Lil/ailgrPnMtAe2F2wn5Hm+J9Nbxp2AvZNKuVPwetdZrKJQuGfCPMI/0baTSOai0EJ4EKlmVC3tYCdRHwOBR5Q8wHK8aOhiO1bVorK8phqPd0/4dJIKnCxULa4dw3vEZTkK7S2oegVH0u2S3mfCpPDOcQNJKPdAK+nsJ7wW10Ixn4xA+pRwDD1x5fOUOdA6bDaQLXjpEHSfw7RC+QDrsHc+b8ZJxYXUS5OPg8b8bj2LfvvcKCxEIzshHRXkavhG3+H8HaK2zMiJoYXXrQPBKGplJsK3tjObk4gl+wXiYqfFJCHublLailZ4EysjgJ814upKdRHc4uYp4gPAIQmjRdc8oFRcwExHBjdTPFAcclOc8Kp5huNN/iI90Or5DIAGHqCM+k30DEVU41/MI26jKo4DDX3JtAidcs1vg7eM0NoEeb98EBlIBAyu50DNzKv4F8Mg9kvfoSM0AAAAASUVORK5CYII=' alt='GitHub' style='height:14px; margin-right:6px; vertical-align:middle;'>"
+                "<a href='https://github.com/muskeg/quote-api' target='_blank' rel='noopener' style='color:#ffb8a0; text-decoration:none; display:inline-flex; align-items:center;'>"
+                "Spin up your own quotes server</a></div>"
+                "<label>API Poll Interval (seconds):</label><input type='number' name='interval' value='" + String(apiIntervalSeconds) + "' min='10' max='86400' required>"
+                "<div class='hint'>How often to fetch new quotes (10 seconds to 24 hours)</div>"
                 "<label><input type='checkbox' name='invert' " + invertChecked + "> Invert Display (black text on light background)</label>"
                 "<button type='submit'>Save Configuration</button>"
                 "</form></div></body></html>";
@@ -584,13 +615,19 @@ void handleRoot() {
 // Web server handler for saving configuration
 void handleSave() {
   if (webServer.hasArg("ssid") && webServer.hasArg("password") && 
-      webServer.hasArg("url")) {
+      webServer.hasArg("url") && webServer.hasArg("interval")) {
     
     // Get form data
     webServer.arg("ssid").toCharArray(ssid, sizeof(ssid));
     webServer.arg("password").toCharArray(password, sizeof(password));
     webServer.arg("url").toCharArray(serverUrl, sizeof(serverUrl));
     invertDisplay = webServer.hasArg("invert"); // Checkbox is present only if checked
+    
+    // Parse interval from seconds to milliseconds
+    unsigned long intervalSeconds = webServer.arg("interval").toInt();
+    if (intervalSeconds < 10) intervalSeconds = 10; // Minimum 10 seconds
+    if (intervalSeconds > 86400) intervalSeconds = 86400; // Maximum 24 hours
+    apiCallInterval = intervalSeconds * 1000;
     
     // Save to preferences
     saveConfiguration();
