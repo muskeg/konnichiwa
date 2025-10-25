@@ -18,7 +18,7 @@
 // Config default values - will be overwritten if stored in preferences
 char ssid[32] = "";
 char password[64] = "";
-char serverUrl[128] = "http://youki.home.muskegg.com:8080/quote"; // Full URL with protocol
+char serverUrl[128] = "https://quotes.muskeg.dev/quote"; // Full URL with protocol
 
 // AP mode settings
 const char* AP_SSID = "KonnichiwaSetup";
@@ -38,8 +38,8 @@ Preferences preferences;
 // Make sure MOSI/SCK are wired to your board's hardware SPI pins.
 U8G2_MAX7219_32X8_F_4W_SW_SPI u8g2(U8G2_R0, CLK_PIN, DATA_PIN, CS_PIN, U8X8_PIN_NONE);
 
-char textBuf[128] = "これを読めるのはちょっとムズ";
-char nextBuf[128] = {0};
+char textBuf[256] = "これを読めるのはちょっとムズ";
+char nextBuf[256] = {0};
 bool hasNextQuote = false;
 bool invertDisplay = false; // when true: black text on light background
 int textWidth = 0;
@@ -63,6 +63,7 @@ void setupAPMode();
 void handleRoot();
 void handleSave();
 void handleNotFound();
+
 
 // Function to extract and store cookies from response
 void handleCookies(HTTPClient& http) {
@@ -392,7 +393,7 @@ void loop() {
     if (textMutex && xSemaphoreTake(textMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
       if (hasNextQuote) {
         // copy queued text to local temp and clear the flag while holding the mutex
-        char queued[128];
+        char queued[256];
         memcpy(queued, nextBuf, sizeof(queued));
         hasNextQuote = false;
         xSemaphoreGive(textMutex);
@@ -434,7 +435,7 @@ void loop() {
       }
     }
 
-    char localBuf[128];
+    char localBuf[256];
     int localTextWidth;
     int localXPos;
     if (textMutex && xSemaphoreTake(textMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -496,7 +497,7 @@ bool loadConfiguration() {
   if (preferences.isKey("configured")) {
     String storedSsid = preferences.getString("ssid", "");
     String storedPassword = preferences.getString("password", "");
-    String storedUrl = preferences.getString("serverUrl", "http://youki.home.muskegg.com:8080/quote");
+    String storedUrl = preferences.getString("serverUrl", "https://quotes.muskeg.dev/quote");
     invertDisplay = preferences.getBool("invertDisplay", false);
     
     // Copy values to our variables
@@ -572,7 +573,7 @@ void handleRoot() {
                 "<form action='/save' method='POST'>"
                 "<label>WiFi SSID:</label><input type='text' name='ssid' value='" + String(ssid) + "' required>"
                 "<label>WiFi Password:</label><input type='password' name='password' value='" + String(password) + "' required>"
-                "<label>Server URL:</label><input type='url' name='url' value='" + String(serverUrl) + "' required placeholder='http://example.com:8080/quote'>"
+                "<label>Server URL:</label><input type='url' name='url' value='" + String(serverUrl) + "' required placeholder='https://quotes.muskeg.dev/quote'>"
                 "<div class='hint'>Include protocol (http:// or https://), host, port, and path</div>"
                 "<label><input type='checkbox' name='invert' " + invertChecked + "> Invert Display (black text on light background)</label>"
                 "<button type='submit'>Save Configuration</button>"
@@ -599,7 +600,7 @@ void handleSave() {
                   "<meta name='viewport' content='width=device-width, initial-scale=1'>"
                   "<style>body{font-family:Arial;margin:20px;background-color:#331111;color:#f3f3f3;text-align:center;} "
                   "#config{max-width:600px;margin:auto;margin-top:5%;} "
-                  ".success{color:#4CAF50;font-size:24px;}</style></head>"
+                  ".success{color:#841d00;font-size:24px;}</style></head>"
                   "<body><div id='config'><h1 class='success'>Configuration Saved!</h1>"
                   "<p>The device will restart and attempt to connect to the configured WiFi network.</p>"
                   "</div></body></html>";
