@@ -517,6 +517,7 @@ bool loadConfiguration() {
     String storedUrl = preferences.getString("serverUrl", "https://quotes.muskeg.dev/quote");
     invertDisplay = preferences.getBool("invertDisplay", false);
     apiCallInterval = preferences.getULong("apiInterval", 120000); // Default: 2 minutes
+    scrollInterval = preferences.getULong("scrollInterval", 75); // Default: 75ms
     
     // Copy values to our variables
     storedSsid.toCharArray(ssid, sizeof(ssid));
@@ -539,6 +540,7 @@ void saveConfiguration() {
   preferences.putString("serverUrl", serverUrl);
   preferences.putBool("invertDisplay", invertDisplay);
   preferences.putULong("apiInterval", apiCallInterval);
+  preferences.putULong("scrollInterval", scrollInterval);
   preferences.putBool("configured", true);
   // Optionally clear cookies when configuration changes
   // preferences.remove("cookies");
@@ -606,6 +608,8 @@ void handleRoot() {
                 "Spin up your own quotes server</a></div>"
                 "<label>API Poll Interval (seconds):</label><input type='number' name='interval' value='" + String(apiIntervalSeconds) + "' min='10' max='86400' required>"
                 "<div class='hint'>How often to fetch new quotes (10 seconds to 24 hours)</div>"
+                "<label>Scroll Speed (milliseconds):</label><input type='number' name='scrollspeed' value='" + String(scrollInterval) + "' min='10' max='500' required>"
+                "<div class='hint'>How fast text scrolls (10ms = fast, 500ms = slow)</div>"
                 "<label><input type='checkbox' name='invert' " + invertChecked + "> Invert Display (black text on light background)</label>"
                 "<button type='submit'>Save Configuration</button>"
                 "</form></div></body></html>";
@@ -615,7 +619,7 @@ void handleRoot() {
 // Web server handler for saving configuration
 void handleSave() {
   if (webServer.hasArg("ssid") && webServer.hasArg("password") && 
-      webServer.hasArg("url") && webServer.hasArg("interval")) {
+      webServer.hasArg("url") && webServer.hasArg("interval") && webServer.hasArg("scrollspeed")) {
     
     // Get form data
     webServer.arg("ssid").toCharArray(ssid, sizeof(ssid));
@@ -628,6 +632,12 @@ void handleSave() {
     if (intervalSeconds < 10) intervalSeconds = 10; // Minimum 10 seconds
     if (intervalSeconds > 86400) intervalSeconds = 86400; // Maximum 24 hours
     apiCallInterval = intervalSeconds * 1000;
+    
+    // Parse scroll speed
+    unsigned long scrollSpeedMs = webServer.arg("scrollspeed").toInt();
+    if (scrollSpeedMs < 10) scrollSpeedMs = 10; // Minimum 10ms
+    if (scrollSpeedMs > 500) scrollSpeedMs = 500; // Maximum 500ms
+    scrollInterval = scrollSpeedMs;
     
     // Save to preferences
     saveConfiguration();
