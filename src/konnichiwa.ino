@@ -222,9 +222,29 @@ void setup() {
               
               Serial.print("API task connecting to: ");
               Serial.println(url);
+              
+              Serial.print("Protocol detected: ");
+              Serial.println(isHttps ? "HTTPS" : "HTTP");
 
               if (http.begin(secureClient, url)) {
                 http.setTimeout(10000);
+                
+                // Add standard headers for good API compatibility
+                http.addHeader("User-Agent", "Konnichiwa-ESP32/1.0");
+                http.addHeader("Accept", "application/json");
+                http.addHeader("Connection", "keep-alive");
+                
+                // Try setting Host header without port if the URL includes one
+                // Some servers might expect Host: hostname instead of Host: hostname:port
+                int colonIndex = url.indexOf(":", url.indexOf("//") + 2);
+                if (colonIndex > 0 && url.indexOf("/", colonIndex) > colonIndex) {
+                  // Extract hostname from URL (between // and :)
+                  int start = url.indexOf("//") + 2;
+                  String hostname = url.substring(start, colonIndex);
+                  http.addHeader("Host", hostname);
+                  Serial.print("Setting Host header to: ");
+                  Serial.println(hostname);
+                }
                 
                 // Add cookies to the request if we have any
                 if (storedCookies.length() > 0) {
@@ -283,6 +303,23 @@ void setup() {
 
               if (http.begin(insecureClient, url)) {
                 http.setTimeout(10000);
+                
+                // Add standard headers for good API compatibility
+                http.addHeader("User-Agent", "Konnichiwa-ESP32/1.0");
+                http.addHeader("Accept", "application/json");
+                http.addHeader("Connection", "keep-alive");
+                
+                // Try setting Host header without port if the URL includes one
+                // Some servers might expect Host: hostname instead of Host: hostname:port
+                int colonIndex = url.indexOf(":", url.indexOf("//") + 2);
+                if (colonIndex > 0 && url.indexOf("/", colonIndex) > colonIndex) {
+                  // Extract hostname from URL (between // and :)
+                  int start = url.indexOf("//") + 2;
+                  String hostname = url.substring(start, colonIndex);
+                  http.addHeader("Host", hostname);
+                  Serial.print("Setting Host header to: ");
+                  Serial.println(hostname);
+                }
                 
                 // Add cookies to the request if we have any
                 if (storedCookies.length() > 0) {
