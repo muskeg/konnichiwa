@@ -13,10 +13,19 @@ A lot of credits goes to M-Factory Osaka and their [ESPTimeCast project](https:/
 - ESP32 development board (tested with `esp32dev`)
 - 32x8 LED matrix (MAX7219-based)
 - 3D-printed case, based on [ESPTimeCast's models (purchase links on their repo)](https://github.com/mfactory-osaka/ESPTimeCast?tab=readme-ov-file#-3d-printable-case)
-- Connections:
+
+### Connections
+Adjust pins according to your device pinouts. 
+
+Code is currently using:
   - CLK_PIN: GPIO 14
   - CS_PIN: GPIO 12
   - DATA_PIN: GPIO 13
+
+<img width="542" height="659" alt="image" src="https://github.com/user-attachments/assets/d9169f3b-b596-444f-99ca-7192aa88182e" />
+
+_VIN and GND pins respectively used for 5V and Ground_
+    
 
 ## Features
 - Scrolling Japanese text using a custom font (`misakimincho.h`)
@@ -36,7 +45,7 @@ Quotes are fetched from a backend service compatible with [muskeg/quote-api](htt
 ```
 
 ## Setup & Build
-1. Install [PlatformIO](https://platformio.org/) (VS Code recommended)
+1. Install [PlatformIO](https://platformio.org/)
 2. Clone this repository
 3. Connect your ESP32 and LED matrix as described above
 4. Build and upload:
@@ -71,3 +80,4 @@ Quotes are fetched from a backend service compatible with [muskeg/quote-api](htt
 ---
 
 For questions or improvements, open an issue or PR.
+
