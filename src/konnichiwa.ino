@@ -77,14 +77,68 @@ void handleCookies(HTTPClient& http) {
     // Format: name=value; attributes...
     int semicolonPos = cookieHeader.indexOf(';');
     String cookieValue = (semicolonPos > 0) ? cookieHeader.substring(0, semicolonPos) : cookieHeader;
+    cookieValue.trim();
     
-    // Store the cookie (append if multiple, or replace existing)
-    if (storedCookies.length() > 0) {
-      storedCookies += "; ";
+    // Extract cookie name for comparison
+    int equalsPos = cookieValue.indexOf('=');
+    if (equalsPos > 0) {
+      String newCookieName = cookieValue.substring(0, equalsPos);
+      
+      // Build new cookie string, replacing cookie with same name
+      String newStoredCookies = "";
+      bool cookieReplaced = false;
+      
+      if (storedCookies.length() > 0) {
+        // Parse existing cookies separated by "; "
+        int startPos = 0;
+        while (startPos < storedCookies.length()) {
+          int endPos = storedCookies.indexOf("; ", startPos);
+          String existingCookie;
+          
+          if (endPos == -1) {
+            // Last cookie
+            existingCookie = storedCookies.substring(startPos);
+            startPos = storedCookies.length();
+          } else {
+            existingCookie = storedCookies.substring(startPos, endPos);
+            startPos = endPos + 2;
+          }
+          
+          // Check if this cookie has the same name
+          int existingEqualsPos = existingCookie.indexOf('=');
+          if (existingEqualsPos > 0) {
+            String existingCookieName = existingCookie.substring(0, existingEqualsPos);
+            if (existingCookieName.equals(newCookieName)) {
+              // Replace this cookie with the new one
+              if (newStoredCookies.length() > 0) newStoredCookies += "; ";
+              newStoredCookies += cookieValue;
+              cookieReplaced = true;
+            } else {
+              // Keep this cookie
+              if (newStoredCookies.length() > 0) newStoredCookies += "; ";
+              newStoredCookies += existingCookie;
+            }
+          } else {
+            // Keep malformed cookie
+            if (newStoredCookies.length() > 0) newStoredCookies += "; ";
+            newStoredCookies += existingCookie;
+          }
+        }
+      }
+      
+      // If cookie wasn't replaced, add it as new
+      if (!cookieReplaced) {
+        if (newStoredCookies.length() > 0) newStoredCookies += "; ";
+        newStoredCookies += cookieValue;
+      }
+      
+      storedCookies = newStoredCookies;
+    } else {
+      // No equals sign, just store as-is (shouldn't happen with valid cookies)
+      storedCookies = cookieValue;
     }
-    storedCookies += cookieValue;
     
-    // Optionally save to preferences for persistence across reboots
+    // Save to preferences for persistence across reboots
     preferences.begin("konnichiwa", false);
     preferences.putString("cookies", storedCookies);
     preferences.end();
@@ -121,6 +175,9 @@ void setup() {
   // Load configuration
   if (loadConfiguration()) {
     Serial.println("Configuration loaded successfully");
+    
+    // Load stored cookies from flash
+    loadCookies();
     
     // Try to connect to WiFi
     WiFi.begin(ssid, password);
